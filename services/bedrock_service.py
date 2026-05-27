@@ -1,7 +1,8 @@
-import boto3
+
 import json
 import os
-
+import re
+import boto3
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -19,6 +20,9 @@ You are a professional AI resume evaluator.
 Compare the resume with the job description.
 
 Return ONLY valid JSON.
+Do not add explanations.
+Do not use markdown.
+Do not wrap response in triple backticks.
 
 Example format:
 
@@ -42,22 +46,10 @@ Resume:
 {resume_text}
 """
 
-    formatted_prompt = f"""
-<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-
-You are a helpful AI assistant.
-
-<|eot_id|><|start_header_id|>user<|end_header_id|>
-
-{prompt}
-
-<|eot_id|><|start_header_id|>assistant<|end_header_id|>
-"""
-
     body = {
-        "prompt": formatted_prompt,
+        "prompt": prompt,
         "max_gen_len": 400,
-        "temperature": 0.3
+        "temperature": 0.1
     }
 
     response = client.invoke_model(
@@ -71,13 +63,33 @@ You are a helpful AI assistant.
         response["body"].read()
     )
 
-    generated_text = response_body["generation"]
+    print("BEDROCK RESPONSE:")
+    print(json.dumps(response_body, indent=2))
+
+    generated_text = response_body.get("generation", "")
+
+    print("GENERATED TEXT:")
+    print(repr(generated_text))
 
     try:
-        parsed_response = json.loads(generated_text)
+
+        # Extract JSON safely
+        match = re.search(r"\{.*\}", generated_text, re.DOTALL)
+
+        if not match:
+            raise ValueError("No JSON found")
+
+        json_text = match.group()
+
+        parsed_response = json.loads(json_text)
+
         return parsed_response
 
-    except Exception:
+    except Exception as e:
+
         return {
-            "raw_response": generated_text
+            "match_percentage": 0,
+            "matching_skills": [],
+            "missing_skills": [],
+            "summary": f"Failed to parse model response: {str(e)}"
         }
